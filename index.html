@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Shorts Maker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.1/dist/ffmpeg.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold mb-4">YouTube Shorts Maker</h1>
+            <p class="text-gray-400">Transform your long videos into engaging shorts</p>
+        </div>
+
+        <div class="max-w-4xl mx-auto bg-gray-800 rounded-lg p-6">
+            <div id="upload-section" class="mb-8">
+                <div class="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center" 
+                     id="drop-zone">
+                    <i class="bi bi-cloud-upload text-4xl mb-4"></i>
+                    <h3 class="text-xl mb-4">Drop your video here or</h3>
+                    <input type="file" id="file-input" class="hidden" accept="video/*">
+                    <button onclick="document.getElementById('file-input').click()" 
+                            class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg">
+                        Choose File
+                    </button>
+                    <p class="mt-2 text-sm text-gray-400">or paste YouTube URL</p>
+                    <input type="text" id="youtube-url" 
+                           class="mt-2 w-full max-w-md px-4 py-2 rounded bg-gray-700 border border-gray-600"
+                           placeholder="https://youtube.com/watch?v=...">
+                </div>
+            </div>
+
+            <div id="editor-section" class="hidden">
+                <div class="video-preview mb-6">
+                    <video id="video-preview" controls class="w-full rounded-lg">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+
+                <div class="trimmer mb-6">
+                    <div class="flex items-center gap-4 mb-4">
+                        <input type="range" id="start-time" class="flex-1" min="0" max="100" value="0">
+                        <input type="range" id="end-time" class="flex-1" min="0" max="100" value="100">
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-400">
+                        <span id="start-time-display">00:00</span>
+                        <span id="end-time-display">00:00</span>
+                    </div>
+                </div>
+
+                <div class="settings grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">Subtitle Settings</h4>
+                        <label class="block mb-2">
+                            <input type="checkbox" id="auto-subtitles" checked>
+                            <span class="ml-2">Auto-generate subtitles</span>
+                        </label>
+                        <select id="subtitle-style" class="w-full bg-gray-600 rounded p-2">
+                            <option value="default">Default Style</option>
+                            <option value="bold">Bold</option>
+                            <option value="minimal">Minimal</option>
+                        </select>
+                    </div>
+
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">Export Settings</h4>
+                        <label class="block mb-2">
+                            <input type="checkbox" id="add-music" checked>
+                            <span class="ml-2">Add background music</span>
+                        </label>
+                        <select id="aspect-ratio" class="w-full bg-gray-600 rounded p-2">
+                            <option value="9:16">Vertical (9:16)</option>
+                            <option value="1:1">Square (1:1)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-4">
+                    <button id="generate-btn" class="bg-purple-600 hover:bg-purple-700 px-6 py-2 rounded-lg">
+                        Generate Short
+                    </button>
+                    <button id="download-btn" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg hidden">
+                        Download
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const youtubeUrl = document.getElementById('youtube-url');
+        const editorSection = document.getElementById('editor-section');
+        const videoPreview = document.getElementById('video-preview');
+        const startTime = document.getElementById('start-time');
+        const endTime = document.getElementById('end-time');
+        const generateBtn = document.getElementById('generate-btn');
+        const downloadBtn = document.getElementById('download-btn');
+
+        // Handle file drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-blue-500');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-blue-500');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-500');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('video/')) {
+                handleVideoFile(file);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleVideoFile(file);
+            }
+        });
+
+        function handleVideoFile(file) {
+            const url = URL.createObjectURL(file);
+            videoPreview.src = url;
+            editorSection.classList.remove('hidden');
+            
+            // Initialize video metadata
+            videoPreview.onloadedmetadata = () => {
+                startTime.max = endTime.max = videoPreview.duration;
+                endTime.value = videoPreview.duration;
+                updateTimeDisplays();
+            };
+        }
+
+        // Time slider controls
+        function updateTimeDisplays() {
+            const start = formatTime(startTime.value);
+            const end = formatTime(endTime.value);
+            document.getElementById('start-time-display').textContent = start;
+            document.getElementById('end-time-display').textContent = end;
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        startTime.addEventListener('input', updateTimeDisplays);
+        endTime.addEventListener('input', updateTimeDisplays);
+
+        // Generate and Download functionality
+        generateBtn.addEventListener('click', async () => {
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = '<i class="bi bi-hourglass-split animate-spin"></i> Processing...';
+
+            try {
+                // Simulate processing time
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Show download button
+                downloadBtn.classList.remove('hidden');
+                generateBtn.innerHTML = 'Generate Short';
+                generateBtn.disabled = false;
+            } catch (error) {
+                console.error('Error generating short:', error);
+                generateBtn.innerHTML = 'Error! Try Again';
+                generateBtn.disabled = false;
+            }
+        });
+
+        // MongoDB integration for saving project data
+        async function saveProjectData(projectData) {
+            try {
+                const response = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer 6nHHKwwci3TK3wK6OEFGeznO5Ix1',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: 'shorts-maker-123456',
+                        action: 'create',
+                        collection: 'projects',
+                        data: projectData
+                    })
+                });
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error saving project:', error);
+                throw error;
+            }
+        }
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
